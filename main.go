@@ -70,9 +70,15 @@ type Scheduler struct {
 }
 
 func NewScheduler(filePath string) *Scheduler {
+	// 可选：更稳的 Transport（保持轻量）
+	tr := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	return &Scheduler{
 		tasks:    make(map[string]*Task),
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   &http.Client{Timeout: 10 * time.Second, Transport: tr},
 		filePath: filePath,
 		port:     9000, // 默认端口
 	}
@@ -241,7 +247,7 @@ func (s *Scheduler) RemoveTask(id string) bool {
 		return false
 	}
 	if t.cancel != nil {
-		t.cancel()
+		t.cancel() // 立刻中断正在进行中的请求
 		t.cancel = nil
 	}
 	delete(s.tasks, id)
@@ -260,7 +266,7 @@ func (s *Scheduler) PauseTask(id string) bool {
 		return true
 	}
 	if t.cancel != nil {
-		t.cancel()
+		t.cancel() // 立刻中断正在进行中的请求
 		t.cancel = nil
 	}
 	t.paused = true
@@ -268,35 +274,50 @@ func (s *Scheduler) PauseTask(id string) bool {
 	return true
 }
 
-// -------------------- 执行循环 --------------------
+// -------------------- 执行循环（对齐节拍 + 可中断） --------------------
 
+// 固定速率（对齐节拍）调度：更准；执行时间过长会跳过落后的 tick
 func (s *Scheduler) runTask(ctx context.Context, t *Task) {
-	// 立即执行一次（如不需要可注释）
-	s.executeOnce(t)
+	d := time.Duration(t.IntervalSeconds) * time.Second
 
-	ticker := time.NewTicker(time.Duration(t.IntervalSeconds) * time.Second)
-	defer ticker.Stop()
+	// 如需“刚添加就立即执行一次”，可放开下一行
+	// s.executeOnce(ctx, t)
+
+	// 第一次对齐到下一个节拍（适用于任意间隔，如 7 秒：:00, :07, :14, ...）
+	next := time.Now().Truncate(d).Add(d)
+	timer := time.NewTimer(time.Until(next))
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("[task %s] stopped", t.ID)
 			return
-		case <-ticker.C:
-			s.executeOnce(t)
+		case <-timer.C:
+			s.executeOnce(ctx, t)
+
+			// 计算下一个节拍；若当前时间已跨越多个节拍，跳过积压，保持与墙钟同步
+			now := time.Now()
+			for next = next.Add(d); next.Before(now); next = next.Add(d) {
+				// 跳过落后 tick
+			}
+			timer.Reset(time.Until(next))
 		}
 	}
 }
 
-func (s *Scheduler) executeOnce(t *Task) {
-	req, err := http.NewRequest(t.Method, t.URL, nil) // POST 无 body
+// 带 ctx 的单次执行：删除/暂停时会立刻取消请求
+func (s *Scheduler) executeOnce(ctx context.Context, t *Task) {
+	req, err := http.NewRequestWithContext(ctx, t.Method, t.URL, nil) // POST 按需求无 body
 	if err != nil {
 		log.Printf("[task %s] build request error: %v", t.ID, err)
 		return
 	}
-	req.Header.Set("User-Agent", "gin-scheduler/1.7")
+	req.Header.Set("User-Agent", "gin-scheduler/1.8")
+
 	resp, err := s.client.Do(req)
 	if err != nil {
+		// 被取消时一般为 context.Canceled / context.DeadlineExceeded
 		log.Printf("[task %s] request error: %v", t.ID, err)
 		return
 	}
