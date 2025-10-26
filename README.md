@@ -1,30 +1,36 @@
 # gin-scheduler-json
 
-> A tiny, zero-dependency task scheduler built with **Go + Gin**, persisting jobs to a **JSON file**.  
-> 一款 **Go + Gin** 开发、**JSON 文件**持久化的轻量级定时任务服务，零依赖、单文件二进制即可部署。
+> 🧭 **A lightweight JSON-based task scheduler built with Go + Gin.**  
+> 一款基于 **Go + Gin** 的轻量级任务调度工具，通过 **JSON 文件持久化任务**，支持周期性执行、暂停、删除等操作。
 
-## ✨ Highlights
-- **One binary, one JSON**：丢到任意目录即可运行，`config.json` 同目录生成/读取  
-- **POST 优先的简洁 API**：除查询外，全部用 `POST + URL`（添加任务除外需 JSON）  
-- **Auto-recover**：重启后自动恢复 `enabled=true` 的任务  
-- **Zero deps**：只依赖标准库 + Gin  
-- **Config-driven port**：端口在 `config.json` 配置，默认 `9000`
+---
 
-## 📦 Quick Start
+## 🚀 功能概述
+
+`gin-scheduler-json` 是一个简单易用的 **定时任务调度服务**，主要用于周期性地向指定 API 发送请求（GET 或 POST）。  
+所有任务都存储在本地 `config.json` 文件中，无需数据库，**单文件即可运行**。
+
+**主要特性：**
+- 🧩 **轻量独立**：仅一个可执行文件 + 一个 JSON 配置文件  
+- 🔁 **循环任务**：按秒周期性执行 HTTP 请求  
+- 💾 **自动持久化**：任务信息保存在 `config.json` 中  
+- ♻️ **自动恢复**：重启后自动恢复已启用任务  
+- ⚙️ **配置端口**：服务端口可在 `config.json` 中修改（默认 `9000`）  
+- 🔒 **零依赖部署**：无需任何外部服务或数据库  
+
+---
+
+## 📦 快速开始
 
 ```bash
-# 初始化
-go mod init gin-scheduler-json
-go get github.com/gin-gonic/gin
-
-# 构建
+# 编译
 go build -trimpath -ldflags "-s -w" -o scheduler
 
-# 运行（当前目录将生成 config.json）
+# 运行（当前目录会自动生成 config.json）
 ./scheduler
 ```
 
-首次运行会生成最小配置：
+首次运行自动生成：
 ```json
 {
   "version": 1,
@@ -33,69 +39,65 @@ go build -trimpath -ldflags "-s -w" -o scheduler
 }
 ```
 
-## ⚙️ Configuration (`config.json`)
-- `port`: 服务监听端口（默认 9000）
-- `tasks`: 任务数组（`enabled:true` 重启后自动启动）
+---
 
-任务项结构：
+## 🌐 API 简介
+
+> 除查询接口（GET）外，其余操作均为 **POST + URL**。  
+> 仅 `POST /tasks/add` 需要请求体。
+
+### ✅ 健康检查
+- `GET /healthz`  
+- `POST /healthz`
+
+返回：
 ```json
-{
-  "id": "自动生成",
-  "interval_seconds": 5,
-  "url": "https://example.com/ping",
-  "method": "GET",
-  "description": "每5秒探活",
-  "enabled": true,
-  "created_at": "自动填充",
-  "updated_at": "自动填充"
-}
+{"ok": true}
 ```
 
-## 🌐 API
-> 仅查询使用 GET，其它均为 POST + URL。
-> 添加任务是唯一需要 JSON 请求体 的接口。
+---
 
-### 健康检查
-- `GET /healthz`
-- `POST /healthz`
-**返回**：`{"ok": true}`
-
-### 添加任务
+### ➕ 添加任务
 - `POST /tasks/add`
 ```json
 {
   "interval_seconds": 5,
-  "url": "https://httpbin.org/get",
+  "url": "https://example.com/api",
   "method": "GET",
-  "description": "每5秒请求一次 httpbin"
+  "description": "每5秒请求一次API"
 }
 ```
+返回：
+```json
+{"id": "t-20251026T104512..."}
+```
 
-### 查询全部任务
+---
+
+### 📋 查询全部任务
 - `GET /tasks`
 
-### 查询单个任务
+### 🔍 查询单个任务
 - `GET /tasks/{id}`
 
-### 暂停任务
+---
+
+### ⏸️ 暂停任务
 - `POST /tasks/{id}/pause`
 
-### 删除任务
+### ❌ 删除任务
 - `POST /tasks/{id}/delete`
 
-## 🧪 cURL 示例
+---
+
+## 🧪 示例
 
 ```bash
-# 健康检查
-curl -s http://127.0.0.1:9000/healthz
-
 # 添加任务
-curl -X POST http://127.0.0.1:9000/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"interval_seconds":3,"url":"https://httpbin.org/get","method":"GET","description":"探活"}'
+curl -X POST http://127.0.0.1:9000/tasks/add   -H "Content-Type: application/json"   -d '{"interval_seconds":5,"url":"https://httpbin.org/get","method":"GET","description":"探活"}'
 
-# 查询全部
-curl -s http://127.0.0.1:9000/tasks | jq
+# 查询全部任务
+curl http://127.0.0.1:9000/tasks
 
 # 暂停任务
 curl -X POST http://127.0.0.1:9000/tasks/<id>/pause
@@ -104,18 +106,15 @@ curl -X POST http://127.0.0.1:9000/tasks/<id>/pause
 curl -X POST http://127.0.0.1:9000/tasks/<id>/delete
 ```
 
-## 🛠️ Build & Run
+---
 
-```bash
-go build -trimpath -ldflags "-s -w" -o scheduler
-./scheduler
-```
+## 🧰 应用场景
+- 定时探活 / Ping 外部服务  
+- 简单 HTTP API 调度  
+- 周期性同步或触发任务  
+- 快速验证定时任务逻辑（无需部署复杂 cron）  
 
-后台运行：
-```bash
-nohup ./scheduler > run.log 2>&1 &
-tail -f run.log
-```
+---
 
 ## 📝 License
 MIT
