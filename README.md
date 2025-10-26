@@ -24,10 +24,20 @@
 
 ```bash
 # 编译
+Macos:
+
 go build -trimpath -ldflags "-s -w" -o scheduler
 
+Linux: 
+
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o scheduler
+
+chmod +x scheduler
 # 运行（当前目录会自动生成 config.json）
 ./scheduler
+
+# 使用pm2 来管理进程
+pm2 start ./scheduler --name gin-scheduler
 ```
 
 首次运行自动生成：
