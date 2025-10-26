@@ -61,7 +61,7 @@ go build -trimpath -ldflags "-s -w" -o scheduler
 **返回**：`{"ok": true}`
 
 ### 添加任务
-- `POST /tasks`
+- `POST /tasks/add`
 ```json
 {
   "interval_seconds": 5,
